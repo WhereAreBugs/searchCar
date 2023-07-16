@@ -1,0 +1,48 @@
+@startmindmap
+'https://plantuml.com/mindmap-diagram
+
+caption figure 1
+title My super title
+
+* <&flag> 主控esp32
+** <&flag> 资源分配
+*** <&flag> 电机
+**** 1. 32
+**** 1. 33
+**** 2. 25
+**** 2. 26
+*** <&flag> I2C
+**** <&flag> MPU9250
+***** SCL 22
+***** SDA 21
+**** <&flag> 激光测距x4
+***** SCL 23
+***** SDA 19
+
+*** <&flag> 串口
+**** <&flag> tx
+**** <&flag> rx
+*** <&flag> WIFI
+* 不可用引脚
+** 占用
+*** 0
+*** 2
+*** 4
+*** 5
+*** 12
+*** 15
+*** 36
+*** 6
+*** 7
+*** 8
+*** 9
+*** 10
+*** 11
+** 仅输入
+*** 34
+*** 35
+*** 36
+*** 39
+
+
+@endmindmap
