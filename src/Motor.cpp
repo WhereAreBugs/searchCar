@@ -21,13 +21,22 @@ void Motor::setup() {
     pinMode(pin_m1_B, OUTPUT);
     pinMode(pin_m2_A, OUTPUT);
     pinMode(pin_m2_B, OUTPUT);
+    ledcAttachPin(pin_m1_A, 1);
+    ledcAttachPin(pin_m1_B, 2);
+    ledcAttachPin(pin_m2_A, 3);
+    ledcAttachPin(pin_m2_B, 4);
+    ledcSetup(1, 500, 8);
+    ledcSetup(2, 500, 8);
+    ledcSetup(3, 500, 8);
+    ledcSetup(4, 500, 8);
+
 }
 
-void Motor::setSpeed(uint8_t motor, uint8_t speed) {
-    if (motor == 1)
+void Motor::setSpeed(uint8_t motor, int32_t speed) {
+    if (motor == 0)
     {
         motor1Speed = speed;
-    } else if (motor == 2)
+    } else if (motor == 1)
     {
         motor2Speed = speed;
     } else
@@ -47,20 +56,20 @@ void Motor::setPins(uint8_t pin_m1_A, uint8_t pin_m1_B, uint8_t pin_m2_A, uint8_
 void Motor::update() const {
     if (motor1Speed >= 0)
     {
-        analogWrite(pin_m1_A, motor1Speed);
-        analogWrite(pin_m1_B, 0);
+        ledcWrite(1, motor1Speed/255*500);
+        ledcWrite(2, 0);
     } else
     {
-        analogWrite(pin_m1_A, 0);
-        analogWrite(pin_m1_B, -motor1Speed);
+        ledcWrite(1, 0);
+        ledcWrite(2, -motor1Speed/255*500);
     }
     if(motor2Speed >= 0)
     {
-        analogWrite(pin_m2_A, motor2Speed);
-        analogWrite(pin_m2_B, 0);
+        ledcWrite(3, motor2Speed/255*500);
+        ledcWrite(4, 0);
     } else
     {
-        analogWrite(pin_m2_A, 0);
-        analogWrite(pin_m2_B, -motor2Speed);
+        ledcWrite(3, 0);
+        ledcWrite(4, -motor2Speed/255*500);
     }
 }
