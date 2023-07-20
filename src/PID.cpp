@@ -3,14 +3,22 @@
 //
 
 #include "PID.h"
-
-PID::PID(PIDConfig config) {
+#include <cmath>
+PID::PID(const PIDConfig config) {
     this->config = config;
 }
 
 float PID::update(float input) {
-    float error = config.target - input;
-    integral += error;
+    float error;
+    error = config.target - input;
+    float integral = config.ki * error + integral;
+    if (integral > config.max)
+    {
+        integral = config.max;
+    } else if (integral < config.min)
+    {
+        integral = config.min;
+    }
     float derivative = error - lastError;
     lastError = error;
     float output = config.kp * error + config.ki * integral + config.kd * derivative;
@@ -49,7 +57,7 @@ PIDConfig::PIDConfig() {
     this->kp = 0;
     this->ki = 0;
     this->kd = 0;
-    this->min = 0;
-    this->max = 0;
+    this->min = 100;
+    this->max = 100;
     this->target = 0;
 }

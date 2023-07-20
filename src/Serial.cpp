@@ -8,12 +8,15 @@
 #include "Status.h"
 #include "logger.h"
 #include "AsyncTCP.h"
+#include "MPU6050.h"
 #include <iostream>
 extern int  speed;
-extern int  angle;
-extern uint64_t status;
+extern float  angle;
 extern Control globalControl;
 extern AsyncClient tcp;
+extern float pitch, yaw, roll,accx;
+extern MPU6050 mpu;
+
 
 void globalCommandCallback(String command)
 {
@@ -71,7 +74,7 @@ void globalCommandCallback(String command)
     } else if (strstr(command.c_str(),"setRunning")!= nullptr)
     {
         float target;
-        sscanf(command.c_str(),"setRunning%d",&target);
+        sscanf(command.c_str(),"setRunning%f",&target);
         if (target)
         {
             status|=STATUS_RUNNING_MASK;
@@ -97,9 +100,45 @@ void globalCommandCallback(String command)
     {
         auto i = globalControl.getCurrentPosition();
         LOGI("Current position: "+String(i))
+    } else if (strstr(command.c_str(),"getGlobalStatus")!= nullptr)
+    {
+        LOGI("Global status: "+String(status))
+    } else if (strstr(command.c_str(),"getSpeed")!= nullptr)
+    {
+        auto i = speed;
+        LOGI("Speed: "+String(i))
+    } else if (strstr(command.c_str(),"getAngle")!= nullptr)
+    {
+        auto i = angle;
+        LOGI("Angle: "+String(i))
+    } else if (strstr(command.c_str(),"getRunning")!= nullptr)
+    {
+        auto i = status&STATUS_RUNNING_MASK;
+        LOGI("Running: "+String(i))
+    } else if (strstr(command.c_str(),"getManual")!= nullptr)
+    {
+        auto i = status&STATUS_MANUAL_CONTROL_MASK;
+        LOGI("Manual: "+String(i))
+    } else if (strstr(command.c_str(),"getTargetSelected")!= nullptr)
+    {
+        auto i = status&STATUS_TARGET_SELECTED_MASK;
+        LOGI("Target selected: "+String(i))
+    } else if(strstr(command.c_str(),"getDistanceFromSensor")!= nullptr)
+    {
+        auto i = globalControl.getDistance();
+        LOGI("Distance: Left"+String(i[0])+" Front: "+String(i[1])+" Right: "+String(i[2]))
+    } else if (strstr(command.c_str(),"getMPUdata")!= nullptr)
+    {
+        LOGI("MPU data: pitch: "+String(pitch)+" yaw: "+String(yaw)+" roll: "+String(roll)+" accx: "+String(accx))
+    }else if (strstr(command.c_str(),"getX_Y")!= nullptr)
+    {
+        auto data = globalControl.getX_Y();
+        LOGI("X: "+String(data[0])+" Y: "+String(data[1]))
     }
     else
     {
         tLOGE("Unknown command: "+command)
     }
 }
+
+void globalOpenMVCallback(String command){}

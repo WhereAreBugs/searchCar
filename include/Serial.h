@@ -6,6 +6,6 @@
 #define SEARCHCAR_SERIAL_H
 #include <Arduino.h>
 void globalCommandCallback(String command);
-
+void globalOpenMVCallback(String command);
 
 #endif //SEARCHCAR_SERIAL_H

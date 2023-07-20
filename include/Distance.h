@@ -5,21 +5,34 @@
 #ifndef SEARCHCAR_DISTANCE_H
 #define SEARCHCAR_DISTANCE_H
 #include "Arduino.h"
-#include "VL53L0X.h"
+#include "Adafruit_VL53L0X.h"
+#include "atomic"
+
 
 class Distance {
 private:
-    VL53L0X * left;
-    VL53L0X * right;
-    VL53L0X * front;
-
+    Adafruit_VL53L0X *left;
+    Adafruit_VL53L0X *right;
+    Adafruit_VL53L0X *front;
+    Adafruit_VL53L0X * back;
+    VL53L0X_RangingMeasurementData_t measure1;
+    VL53L0X_RangingMeasurementData_t measure2;
+    VL53L0X_RangingMeasurementData_t measure3;
+    VL53L0X_RangingMeasurementData_t measure4;
+    std::atomic<uint16_t> leftData;
+    std::atomic<uint16_t> rightData;
+    std::atomic<uint16_t> frontData;
+    std::atomic<uint16_t> backData;
 public:
-    Distance(VL53L0X *Left, VL53L0X *Right, VL53L0X *Front);
+    Distance(Adafruit_VL53L0X *Left, Adafruit_VL53L0X *Right, Adafruit_VL53L0X *Front,
+             Adafruit_VL53L0X *Back);
 //    void update();
-    uint16_t getLeftDistance() const;
-    uint16_t getRightDistance() const;
-    uint16_t getFrontDistance() const;
+    uint16_t getLeftDistance() ;
+    uint16_t getRightDistance() ;
+    uint16_t getFrontDistance() ;
     void setup();
+    void update();
+
 };
 
 

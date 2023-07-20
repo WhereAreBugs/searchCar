@@ -20,8 +20,8 @@ struct PIDConfig {
 class PID {
 private:
     PIDConfig config;
-    float lastError;
-    float integral;
+    float lastError{};
+
 public:
     explicit PID(PIDConfig config);
     float update(float input);

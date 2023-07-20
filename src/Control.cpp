@@ -8,25 +8,30 @@
 #include "logger.h"
 #include "AsyncTCP.h"
 #include "Distance.h"
-
+#include "Ticker.h"
 extern Distance allDistance;
 
 extern AsyncClient tcp;
-extern MPU9250 mpu;
 
+Ticker goOutTicker;
 ///外部对象
-float pitch, yaw, roll;
+float pitch, yaw, roll,accx;
 ///速度控制，角度控制
 int speed = 0;
 float angle = 0;
 /// 仅用于自动寻路模式的变量
-int auto_speed = 30;
+int auto_speed = 100;
 
 
 void getGlobalBaseInfo() {
-    pitch = mpu.getPitch();
-    yaw = mpu.getYaw();
-    roll = mpu.getRoll();
+#ifndef DISABLE_I2C
+
+
+#else
+    pitch = 0;
+    yaw = 0;
+    roll = 0;
+#endif
 }
 
 Control::Control(PIDConfig config) {
@@ -51,14 +56,21 @@ Control::Control() {
 
 void Control::update() {
     getGlobalBaseInfo();
-    current_distance_left = allDistance.getLeftDistance();
-    current_distance_right = allDistance.getRightDistance();
+#ifndef DISABLE_I2C
+    current_distance_left = allDistance.getLeftDistance()/10;
+    current_distance_right = allDistance.getRightDistance()/10;
     if (!isFrontSwitched) {
-        current_distance_front = allDistance.getFrontDistance();
+        current_distance_front = allDistance.getFrontDistance()/10;
     }
+    if (!(status & STATUS_RUNNING_MASK)) {
+        // 系统等待启动
+        speedLeft = 0, speedRight = 0;
+        return;
+    }  //启动判断
     if ((!isFrontSwitched)&&current_distance_front == 65535) {
         // 传感器数据溢出，此时应该更换传感器
         //TODO: 更换数据源到后方传感器
+        LOGE("sensor data overflow!")
         //请注意，每次更换传感器后，都需要复位传感器的上次计数
         isFrontSwitched = true;
     }
@@ -66,17 +78,38 @@ void Control::update() {
     {
         isFrontSwitched = false;
     }
+#else
+    current_distance_left = 0;
+    current_distance_right = 0;
+    current_distance_front = 0;
+#endif
+
     if (last_distance_front == 0 && last_distance_left == 0 && last_distance_right == 0) {
         last_distance_front = current_distance_front;
         last_distance_left = current_distance_left;
         last_distance_right = current_distance_right;
     } //初始化，防止后续计算出错
     updateX_Y(); //更新坐标系
-    if (!(status & STATUS_RUNNING_MASK)) {
-        // 系统等待启动
-        speedLeft = 0, speedRight = 0;
+
+    if (status & STATUS_TURNING_MASK) {
+        // 系统正在转弯, 检查转弯是否完成。
+        auto pidResult = pid.update(yaw);
+        speedLeft = pidResult;
+        speedRight = -pidResult;
+        if (pidResult < 5) //认为转弯已经完成
+        {
+            LOGI("Turn Finished")
+            last_distance_front = 0, last_distance_right = 0, last_distance_left = 0;
+            status &= ~STATUS_TURNING_MASK;
+        }
         return;
-    }  //启动判读
+    } //转弯判断
+    if (status & STATUS_MANUAL_CONTROL_MASK) {
+        // 手动模式启用
+//        LOGV("Manual Mode")
+        ManualMode();
+        return;
+    }  //手动模式
     if (status & STATUS_RUNNING_MASK && !(status & STATUS_ENTERED)) {
         // 系统已启动，但未进入迷宫
         static bool initialized = false;
@@ -85,22 +118,28 @@ void Control::update() {
             initialized = true;
         } else {
             if (checkEnter()) {
+                static int count = 0;
+                if (count++ <300) {
+                    pid.setTarget(0);
+                    auto pidResult = pid.update(yaw);
+                    speedLeft = auto_speed + pidResult;
+                    speedRight = auto_speed - pidResult;
+                    return;
+                }
                 status = status | STATUS_ENTERED;
+                status = status | STATUS_ARRIVED_MASK;
+                LOGI("Entered the maze")
                 initialized = false;
                 return;
             } else {
-                auto pidResult = pid.update(yaw);
-                speedLeft = auto_speed + pidResult;
-                speedRight = auto_speed - pidResult;
+                    pid.setTarget(0);
+                    auto pidResult = pid.update(yaw);
+                    speedLeft = auto_speed + pidResult;
+                    speedRight = auto_speed - pidResult;
                 return;
             }
         }
     } //进入判断
-    if (status & STATUS_MANUAL_CONTROL_MASK) {
-        // 手动模式启用
-        ManualMode();
-        return;
-    }  //手动模式
     if (status & STATUS_TURNING_MASK) {
         // 系统正在转弯, 检查转弯是否完成。
         auto pidResult = pid.update(yaw);
@@ -115,6 +154,21 @@ void Control::update() {
     } //转弯判断
     if (status & STATUS_MAP_BUILD_MASK) {
         ///  地图已完成建立
+        if (status&STATUS_EXIT_WALK_OUT_MASK)
+        {
+            /// 到达出口，只差最后一步，走出迷宫
+            auto pidResult = pid.update(yaw);
+            speedLeft = auto_speed + pidResult;
+            speedRight = auto_speed - pidResult;
+            if(!goOutTicker.active())
+            {
+                goOutTicker.attach_ms(1000,[](){
+                    status = status|STATUS_ARRIVED_EXIT_MASK;
+                    status = status&(~STATUS_RUNNING_MASK);
+                });
+            }
+        }
+
         if (!(status & STATUS_ARRIVED_MASK)) {
             /// 当前系统有下一个点的目标，但是仍然没有到达下一个点
             moveToTarget();
@@ -180,6 +234,7 @@ void Control::update() {
     } //系统到达目标点
     else if (!((status) & STATUS_ARRIVED_MASK)) {
         /// 系统尚未未到达上次行动要求的目标点
+        LOGI("Moving to target")
         moveToTarget();
         auto pidResult = pid.update(yaw);
         speedLeft = auto_speed + pidResult;
@@ -221,7 +276,11 @@ void Control::turnLeft() {
         status |= STATUS_DIRECTION(((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET) - 1);
     }
     status |= STATUS_TURNING_MASK;
-    //TODO: 添加PID的目标值(不知道MPU9250的表示情况)
+    if (pid.getConfig().target < -90)
+    {
+        pid.setTarget(180);
+    } else
+    pid.setTarget(pid.getConfig().target - 90);
 }
 
 void Control::turnRight() {
@@ -234,12 +293,20 @@ void Control::turnRight() {
         status |= STATUS_DIRECTION(((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET) + 1);
     }
     status |= STATUS_TURNING_MASK;
-    //TODO: 添加PID的目标值(不知道MPU9250的表示情况)
+    if (pid.getConfig().target > 90)
+    {
+        pid.setTarget(-180);
+    } else
+    pid.setTarget(pid.getConfig().target + 90);
 }
 
 void Control::goStraight() {
     LOGI("go straight")
     auto_speed = 100;
+    status &= ~STATUS_ARRIVED_MASK;
+    status &= ~STATUS_SCAN_MASK;
+    status &= ~STATUS_FIND_TREASURE_MASK;
+
 }
 
 void Control::turnBack() {
@@ -254,6 +321,20 @@ void Control::turnBack() {
         status |= STATUS_DIRECTION(((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET) - 2);
     }
     status |= STATUS_TURNING_MASK;
+    if (pid.getConfig().target == 0)
+    {
+        pid.setTarget(180);
+    } else if (pid.getConfig().target == 90)
+    {
+        pid.setTarget(-90);
+    } else if (pid.getConfig().target == -90)
+    {
+        pid.setTarget(90);
+    } else
+    {
+        pid.setTarget(0);
+    }
+
 }
 
 void Control::stop() {
@@ -302,6 +383,11 @@ void Control::moveToExit() {
     LOGI("move to exit start")
     auto currentPos = getCurrentPosition();
     auto targetPos = 25;
+    if (currentPos == 25)
+    {
+        status = status | STATUS_EXIT_WALK_OUT_MASK;
+        return;
+    }
     if (!isMoveToExitInitialed) {
         dijkstra(currentPos, targetPos, 26, mapExitPath);
         isMoveToExitInitialed = true;
@@ -425,6 +511,8 @@ void Control::selectNextTarget() {
     visited.emplace_back(currentPos); //将当前位置加入已访问列表
     if (!path.empty()) {
         auto target = path.top();
+        status &= ~STATUS_TARGET_OFFSET;
+        status = status | STATUS_TARGET(target);
         processMultiStep(true);
         path.pop();
     } else {
@@ -562,6 +650,9 @@ void Control::updateX_Y() {
         }
 
     }
+    last_distance_front = current_distance_front;
+    last_distance_left = current_distance_left;
+    last_distance_right = current_distance_right;
 }
 
 using namespace std;
@@ -610,6 +701,7 @@ void Control::processMultiStep(bool inlineCall) {
         switch ((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET) {
             case 0: //当前朝向为下方
             {
+                LOGI("Current direction: down")
                 if (targetPos == currentPos + 1) {
                     //目标点在前方
                     goStraight();
@@ -633,6 +725,7 @@ void Control::processMultiStep(bool inlineCall) {
             }
             case 1: //当前方向为右方
             {
+                LOGI("Current direction: right")
                 if (targetPos == currentPos + 5) {
                     //目标点在前方
                     goStraight();
@@ -656,6 +749,7 @@ void Control::processMultiStep(bool inlineCall) {
             }
             case 2: //当前方向为上方
             {
+                LOGI("Current direction: up")
                 if (targetPos == currentPos - 1) {
                     //目标点在前方
                     goStraight();
@@ -679,6 +773,7 @@ void Control::processMultiStep(bool inlineCall) {
             }
             case 3: //当前方向为左方
             {
+                LOGI("Current direction: left")
                 if (targetPos == currentPos - 5) {
                     //目标点在前方
                     goStraight();
@@ -729,6 +824,19 @@ void Control::processMultiStep(bool inlineCall) {
         }
     }
 
+std::vector<int> Control::getDistance() {
+    std::vector<int> dist;
+    dist.resize(3);
+    dist[0] = current_distance_left;
+    dist[1] = current_distance_front;
+    dist[2] = current_distance_right;
+    return dist;
+}
+
+std::vector<float> Control::getX_Y() {
+    vector<float> result = {x_offset, y_offset};
+    return result;
+}
 
 
 #pragma clang diagnostic pop

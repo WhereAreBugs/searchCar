@@ -165,6 +165,7 @@ public:
     void setKP(float kp);
     void setKI(float ki);
     void setKD(float kd);
+    std::vector<int> getDistance();
 public:
     /**
      * @brief 依据对距离传感器的累加，来计算小车当前所在的位置。
@@ -179,6 +180,7 @@ public:
 
 
     std::vector<std::vector<int>> getMap();
+    std::vector<float> getX_Y();
     /**
      * @brief 用于获取一个节点是否已经访问过
      * @return 返回一个节点是否已经访问过
@@ -213,7 +215,6 @@ private:
      * @attention 注意必须要先保证扫描完成才能进行访问
      */
      std::vector<bool> scan_result;
-
     void processMultiStep(bool inlineCall);
 
 private:
