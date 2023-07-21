@@ -93,6 +93,7 @@ void Control::update() {
 
     if (status & STATUS_TURNING_MASK) {
         // 系统正在转弯, 检查转弯是否完成。
+        LOGI("Turning")
         auto pidResult = pid.update(yaw);
         speedLeft = pidResult;
         speedRight = -pidResult;
@@ -106,7 +107,7 @@ void Control::update() {
     } //转弯判断
     if (status & STATUS_MANUAL_CONTROL_MASK) {
         // 手动模式启用
-//        LOGV("Manual Mode")
+        LOGV("Manual Mode")
         ManualMode();
         return;
     }  //手动模式
@@ -142,6 +143,7 @@ void Control::update() {
     } //进入判断
     if (status & STATUS_TURNING_MASK) {
         // 系统正在转弯, 检查转弯是否完成。
+        LOGV("Turning")
         auto pidResult = pid.update(yaw);
         speedLeft = pidResult;
         speedRight = -pidResult;
@@ -153,6 +155,7 @@ void Control::update() {
         return;
     } //转弯判断
     if (status & STATUS_MAP_BUILD_MASK) {
+        LOGI("Building Map finished")
         ///  地图已完成建立
         if (status&STATUS_EXIT_WALK_OUT_MASK)
         {
@@ -211,6 +214,7 @@ void Control::update() {
                 //TODO: 当前处于目标数字处，接收信号左右移动以保证视觉系统能够识别到数字
                 delay(100);
             }
+            LOGI("FIND ok")
         }
         /// 系统目标需要更多步才能完成
         if (status&STATUS_MULTI_STEP_MASK)
@@ -226,6 +230,7 @@ void Control::update() {
         }
         if (!(status & STATUS_TARGET_SELECTED_MASK)) {
             /// 根据当前矩阵选择下一个点
+
             selectNextTarget();
             LOGI("Next target selected")
             status = status | STATUS_TARGET_SELECTED_MASK;
@@ -629,26 +634,20 @@ void Control::updateX_Y() {
     if (status & STATUS_TURNING_MASK) {
         return;
     }
-    //TODO: 参考系统当前倾角作适当校准
-    switch (status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET) {
-        case 0: //方向：将入口作为上方，该方向为下方
-        {
-            x_offset += last_distance_front - current_distance_front;
-            break;
-        }
-        case 1: {
-            y_offset += last_distance_front - current_distance_front;
-            break;
-        }
-        case 2: {
-            x_offset -= last_distance_front - current_distance_front;
-            break;
-        }
-        case 3: {
-            y_offset -= last_distance_front - current_distance_front;
-            break;
-        }
 
+    //TODO: 参考系统当前倾角作适当校准
+    if ((status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET)==0) {
+        x_offset += last_distance_front - current_distance_front;
+    }else if ((status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET)==1) {
+        LOGI("Currenrt direction:" + String((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET))
+        y_offset += last_distance_front - current_distance_front;
+    }
+
+      else if ((status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET)==2) {
+        x_offset -= last_distance_front - current_distance_front;
+      } else {
+        LOGI("Currenrt direction:" + String((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET))
+        y_offset -= last_distance_front - current_distance_front;
     }
     last_distance_front = current_distance_front;
     last_distance_left = current_distance_left;
@@ -697,11 +696,12 @@ void Control::dijkstra(int start, int end, int n, vector<int> &targetPath) {
 void Control::processMultiStep(bool inlineCall) {
     auto currentPos = getCurrentPosition();
     if (inlineCall) {
-        auto targetPos = ((status & STATUS_TARGET_SELECTED_MASK) >> STATUS_TARGET_OFFSET); //从内联调用时，检查是否能单步完成
+        auto targetPos = ((status & STATUS_TARGET_MASK) >> STATUS_TARGET_OFFSET); //从内联调用时，检查是否能单步完成
         switch ((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET) {
             case 0: //当前朝向为下方
             {
                 LOGI("Current direction: down")
+                LOGI("Target position:"+  String(targetPos))
                 if (targetPos == currentPos + 1) {
                     //目标点在前方
                     goStraight();
