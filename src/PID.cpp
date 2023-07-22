@@ -11,7 +11,7 @@ PID::PID(const PIDConfig config) {
 float PID::update(float input) {
     float error;
     error = config.target - input;
-    float integral = config.ki * error + integral;
+    integral = config.ki * error + integral;
     if (integral > config.max)
     {
         integral = config.max;

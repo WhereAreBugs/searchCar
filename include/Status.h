@@ -5,7 +5,7 @@
 #ifndef SEARCHCAR_STATUS_H
 #define SEARCHCAR_STATUS_H
 #include <Arduino.h>
-extern uint64_t status;
+extern volatile uint64_t status;
 /// 系统全局的状态，是否开始运行。
 #define STATUS_RUNNING_MASK 0x0000000000000001
 #define STATUS_RUNNING 0x0000000000000001

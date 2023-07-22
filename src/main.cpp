@@ -12,6 +12,8 @@
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps_V6_12.h"
 #include "esp32-hal-timer.h"
+#include "SerialEncoder.h"
+#include "MPU6050.h"
 
 #ifndef DUSE_OTA
 
@@ -29,8 +31,10 @@ Adafruit_VL53L0X lox1 = Adafruit_VL53L0X();
 Adafruit_VL53L0X lox2 = Adafruit_VL53L0X();
 Adafruit_VL53L0X lox3 = Adafruit_VL53L0X();
 Adafruit_VL53L0X lox4 = Adafruit_VL53L0X();
-MPU6050 mpu;
 AsyncClient tcp;
+MPU6050 mpu;
+SerialEncoder encoder;
+//SerialMotor globalMotor;
 Motor globalMotor(33, 32, 25, 26);
 Control globalControl(PIDConfig(TRUN_KP, TRUN_KI, TRUN_KD, -255, 0, 255));
 /// 对象列表
@@ -47,9 +51,6 @@ hw_timer_t *timer = nullptr;
 #define SHT_LOX2 18
 #define SHT_LOX3 17
 // objects for the vl53l0x
-
-
-// this holds the measurement
 
 
 /// DMP
@@ -74,13 +75,16 @@ void dmpDataReady() {
 }
 
 #define QUICKDEBUG
-#define INTERRUPT_PIN 35
+#define INTERRUPT_PIN 34
 /// promotes
 
 void I2C1_start(void *pVoid)
 {
     mpu.initialize();
+    Serial.println("Testing device connections...");
+    vTaskDelay(10);
     int devStatus = mpu.dmpInitialize();
+    Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
     if (devStatus == 0) {
         // Calibration Time: generate offsets and calibrate our MPU6050
         mpu.CalibrateAccel(6);
@@ -151,6 +155,7 @@ void I2C2_start(void *pVoid){
 
     delay(10);
     // initing LOX1
+    Serial.println("Trying to init LOX1");
     if(!lox1.begin(LOX1_ADDRESS, false,&Wire1)) {
         Serial.println(F("Failed to boot first VL53L0X"));
     }
@@ -290,15 +295,15 @@ void setup() {
     }, RISING);
 #endif
     globalMotor.setup();
-    ///配置定时器
-#ifndef SOFTPWM
-#else
-    hw_timer_t *timer__ = timerBegin(1, 80, true);
-    timerAttachInterrupt((hw_timer_t *) timer__, [](){
+    ///准备配置软件PWM
+#ifdef SOFTPWM
+    timer = timerBegin(0, 80, true);
+    timerAttachInterrupt(timer, []()
+    {
         globalMotor.IQRHandler();
-        }, true);
-    timerAlarmWrite(timer__, 50, true);
-    timerAlarmEnable(timer__);
+    }, true);
+    timerAlarmWrite(timer, 20, true);
+    timerAlarmEnable(timer);
 #endif
     Serial.println("Motor setup complete");
     Serial.setRxTimeout(50);
@@ -307,6 +312,11 @@ void setup() {
         String data = Serial.readStringUntil(0x68);
         globalOpenMVCallback(data);
     });
+    /// 配置串口编码器
+    Serial1.begin(115200);
+    encoder.attchSerial(&Serial1);
+    encoder.setup();
+    Serial.println("Encoder setup complete");
 }
 
 
@@ -315,9 +325,6 @@ void loop() {
     /// 同步速度到电机
     globalMotor.setSpeed(0, globalControl.getSpeedLeft());
     globalMotor.setSpeed(1, globalControl.getSpeedRight());
-#ifndef SOFTPWM
-    globalMotor.update();
-#endif
 #ifndef DUSE_OTA
     ArduinoOTA.handle();
 #endif

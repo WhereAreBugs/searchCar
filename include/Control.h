@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <vector>
 #include "PID.h"
+#include "settings.h"
 #include <stack>
 
 inline void getGlobalBaseInfo();
@@ -29,30 +30,18 @@ private:
      * @brief 用于记录小车的位置，以及小车的朝向。
      * @details 该坐标系的原点为小车的初始位置，x轴为小车的初始朝向，y轴为x轴的逆时针旋转90度。
      */
-    PID pid = PID(PIDConfig(0, 0, 0, 0, 0, 0)); //PID控制器
+    PID pid = PID(PIDConfig(TRUN_KP, 0, 0, 0, 0, 0)); //PID控制器
     int speedLeft = 0; //左轮速度
     int speedRight = 0; //右轮速度
     int map[26][26] = {0}; //可达性矩阵,默认全是0，比实际值大一，避免多余的-1。
     std::stack<int8_t> path; //路径栈,用于存储存在未完成遍历的节点
     std::vector<int8_t> visited; //已经访问过的节点
     /// 用于计算小车当前的坐标
-    /**
-     * @param x_offset 小车当前的x方向累计距离
-     * @param y_offset 小车当前的y方向累计距离
-     * @param last_distance_left 上一次测量的左方距离
-     * @param last_distance_right 上一次测量的右方距离
-     * @param last_distance_front 上一次测量的前方距离
-     * @attention 随着小车当前朝向的旋转，这些变量的写入时所需要读取的传感器也会发生变化。因此需要增加更多的判断。才能保证数据的正确性。
-     */
-    float x_offset = 0;
-    float y_offset = 0;
-    float last_distance_left = 0;
-    float last_distance_right = 0;
-    float last_distance_front = 0;
+
     float current_distance_left = 0;
     float current_distance_right = 0;
     float current_distance_front = 0;
-    int mapInfo[5][5]       {1,6,11,16,21,
+    const int  mapInfo[5][5]   {1,6,11,16,21,
                              2,7,12,17,22,
                              3,8,13,18,23,
                              4,9,14,19,24,
@@ -134,7 +123,7 @@ private:  //不同状态下的行为
      * @brief 在小车最开始的阶段，判断小车是否已经进入了迷宫。若没有，则调用该函数，让小车进入迷宫。
      */
     inline void enterTheMaze();
-    inline void updateX_Y();
+
 private: //状态判断用的辅助函数
     /**
      * @brief 用于判断小车是否已经进入了迷宫
@@ -229,6 +218,8 @@ private:
  */
     bool isMoveToExitInitialed{};
     std::vector<int> mapExitPath;
+
+    int getAngleOffset();
 };
 
 

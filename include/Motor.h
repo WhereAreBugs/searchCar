@@ -17,9 +17,9 @@ private:
     uint32_t pwmCounter;
 public:
     Motor(uint8_t pin_m1_A, uint8_t pin_m1_B, uint8_t pin_m2_A, uint8_t pin_m2_B);
-    void setup();
+    void setup() const;
     void setSpeed(uint8_t motor, int32_t speed);
-    void setPins(uint8_t pin_m1_A, uint8_t pin_m1_B, uint8_t pin_m2_A, uint8_t pin_m2_B);
+    void setPins(uint8_t newPin_m1_A, uint8_t newPin_m1_B, uint8_t newPin_m2_A, uint8_t newPin_m2_B);
     void update() const;
     void IQRHandler();
 };

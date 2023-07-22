@@ -8,15 +8,15 @@
 #include "Status.h"
 #include "logger.h"
 #include "AsyncTCP.h"
-#include "MPU6050.h"
+
+#include "SerialEncoder.h"
 #include <iostream>
 extern int  speed;
 extern float  angle;
 extern Control globalControl;
 extern AsyncClient tcp;
 extern float pitch, yaw, roll,accx;
-extern MPU6050 mpu;
-
+extern SerialEncoder encoder;
 
 void globalCommandCallback(String command)
 {
@@ -129,11 +129,19 @@ void globalCommandCallback(String command)
         LOGI("Distance: Left"+String(i[0])+" Front: "+String(i[1])+" Right: "+String(i[2]))
     } else if (strstr(command.c_str(),"getMPUdata")!= nullptr)
     {
-        LOGI("MPU data: pitch: "+String(pitch)+" yaw: "+String(yaw)+" roll: "+String(roll)+" accx: "+String(accx))
+        LOGI("MPUdata:"+String(pitch)+","+String(roll)+","+String(yaw))
     }else if (strstr(command.c_str(),"getX_Y")!= nullptr)
     {
         auto data = globalControl.getX_Y();
         LOGI("X: "+String(data[0])+" Y: "+String(data[1]))
+    }else if (strstr(command.c_str(),"getEncoder")!= nullptr) {
+        auto data = encoder.getX_offset();
+        LOGI("Motor1Sp: " + String(data))
+        data = encoder.getY_offset();
+        LOGI("Motor2Sp: " + String(data))
+    }else if (strstr(command.c_str(),"resetEncoder")!= nullptr) {
+        encoder.reset();
+        LOGI("Encoder reset")
     }
     else
     {
@@ -141,4 +149,6 @@ void globalCommandCallback(String command)
     }
 }
 
-void globalOpenMVCallback(String command){}
+void globalOpenMVCallback(String command){
+
+    }

@@ -21,6 +21,7 @@ class PID {
 private:
     PIDConfig config;
     float lastError{};
+    float integral{0};
 
 public:
     explicit PID(PIDConfig config);

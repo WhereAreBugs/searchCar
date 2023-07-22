@@ -16,7 +16,7 @@ Motor::Motor(uint8_t pin_m1_A, uint8_t pin_m1_B, uint8_t pin_m2_A, uint8_t pin_m
 
 }
 
-void Motor::setup() {
+void Motor::setup() const {
     pinMode(pin_m1_A, OUTPUT);
     pinMode(pin_m1_B, OUTPUT);
     pinMode(pin_m2_A, OUTPUT);
@@ -46,11 +46,11 @@ void Motor::setSpeed(uint8_t motor, int32_t speed) {
     }
 }
 
-void Motor::setPins(uint8_t pin_m1_A, uint8_t pin_m1_B, uint8_t pin_m2_A, uint8_t pin_m2_B) {
-    this->pin_m1_A = pin_m1_A;
-    this->pin_m1_B = pin_m1_B;
-    this->pin_m2_A = pin_m2_A;
-    this->pin_m2_B = pin_m2_B;
+void Motor::setPins(uint8_t newPin_m1_A, uint8_t newPin_m1_B, uint8_t newPin_m2_A, uint8_t newPin_m2_B) {
+    this->pin_m1_A = newPin_m1_A;
+    this->pin_m1_B = newPin_m1_B;
+    this->pin_m2_A = newPin_m2_A;
+    this->pin_m2_B = newPin_m2_B;
     pwmCounter = 0;
 
 }
@@ -76,8 +76,7 @@ void Motor::update() const {
         ledcWrite(4, -motor2Speed/255*500);
     }
 #endif
-    return;
-}
+    }
 
 void Motor::IQRHandler() {
 

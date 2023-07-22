@@ -3,14 +3,14 @@
 //
 #include "Control.h"
 #include "Status.h"
-#include <MPU9250.h>
 #include <queue>
 #include "logger.h"
 #include "AsyncTCP.h"
 #include "Distance.h"
 #include "Ticker.h"
+#include "SerialEncoder.h"
 extern Distance allDistance;
-
+extern SerialEncoder encoder;
 extern AsyncClient tcp;
 
 Ticker goOutTicker;
@@ -25,13 +25,12 @@ int auto_speed = 100;
 
 void getGlobalBaseInfo() {
 #ifndef DISABLE_I2C
-
-
 #else
     pitch = 0;
     yaw = 0;
     roll = 0;
 #endif
+
 }
 
 Control::Control(PIDConfig config) {
@@ -57,40 +56,22 @@ Control::Control() {
 void Control::update() {
     getGlobalBaseInfo();
 #ifndef DISABLE_I2C
-    current_distance_left = allDistance.getLeftDistance()/10;
-    current_distance_right = allDistance.getRightDistance()/10;
-    if (!isFrontSwitched) {
-        current_distance_front = allDistance.getFrontDistance()/10;
-    }
+    /**
+     * @brief 由于VL53L0X传感器测距不准，因此舍弃掉mm级别的精度，只保留cm级别的精度。
+     */
+    current_distance_left = allDistance.getLeftDistance()/10; // NOLINT(bugprone-integer-division)
+    current_distance_right = allDistance.getRightDistance()/10; // NOLINT(bugprone-integer-division)
+    current_distance_front = allDistance.getFrontDistance()/10; // NOLINT(bugprone-integer-division)
     if (!(status & STATUS_RUNNING_MASK)) {
         // 系统等待启动
         speedLeft = 0, speedRight = 0;
         return;
     }  //启动判断
-    if ((!isFrontSwitched)&&current_distance_front == 65535) {
-        // 传感器数据溢出，此时应该更换传感器
-        //TODO: 更换数据源到后方传感器
-        LOGE("sensor data overflow!")
-        //请注意，每次更换传感器后，都需要复位传感器的上次计数
-        isFrontSwitched = true;
-    }
-    else if (isFrontSwitched && current_distance_front == 65535)
-    {
-        isFrontSwitched = false;
-    }
 #else
     current_distance_left = 0;
     current_distance_right = 0;
     current_distance_front = 0;
 #endif
-
-    if (last_distance_front == 0 && last_distance_left == 0 && last_distance_right == 0) {
-        last_distance_front = current_distance_front;
-        last_distance_left = current_distance_left;
-        last_distance_right = current_distance_right;
-    } //初始化，防止后续计算出错
-    updateX_Y(); //更新坐标系
-
     if (status & STATUS_TURNING_MASK) {
         // 系统正在转弯, 检查转弯是否完成。
         LOGI("Turning")
@@ -100,14 +81,12 @@ void Control::update() {
         if (pidResult < 5) //认为转弯已经完成
         {
             LOGI("Turn Finished")
-            last_distance_front = 0, last_distance_right = 0, last_distance_left = 0;
             status &= ~STATUS_TURNING_MASK;
         }
         return;
     } //转弯判断
     if (status & STATUS_MANUAL_CONTROL_MASK) {
         // 手动模式启用
-        LOGV("Manual Mode")
         ManualMode();
         return;
     }  //手动模式
@@ -120,6 +99,10 @@ void Control::update() {
         } else {
             if (checkEnter()) {
                 static int count = 0;
+                if (count == 0)
+                {
+                    encoder.reset();
+                }
                 if (count++ <300) {
                     pid.setTarget(0);
                     auto pidResult = pid.update(yaw);
@@ -147,9 +130,8 @@ void Control::update() {
         auto pidResult = pid.update(yaw);
         speedLeft = pidResult;
         speedRight = -pidResult;
-        if (pidResult < 5) //认为转弯已经完成
+        if (getAngleOffset() < 5) //认为转弯已经完成
         {
-            last_distance_front = 0, last_distance_right = 0, last_distance_left = 0;
             status &= ~STATUS_TURNING_MASK;
         }
         return;
@@ -157,53 +139,50 @@ void Control::update() {
     if (status & STATUS_MAP_BUILD_MASK) {
         LOGI("Building Map finished")
         ///  地图已完成建立
-        if (status&STATUS_EXIT_WALK_OUT_MASK)
-        {
+        if (status & STATUS_EXIT_WALK_OUT_MASK) {
             /// 到达出口，只差最后一步，走出迷宫
+            LOGI("Walking out")
             auto pidResult = pid.update(yaw);
             speedLeft = auto_speed + pidResult;
             speedRight = auto_speed - pidResult;
-            if(!goOutTicker.active())
-            {
-                goOutTicker.attach_ms(1000,[](){
-                    status = status|STATUS_ARRIVED_EXIT_MASK;
-                    status = status&(~STATUS_RUNNING_MASK);
+            if (!goOutTicker.active()) {
+                goOutTicker.attach_ms(1000, []() {
+                    status = status | STATUS_ARRIVED_EXIT_MASK;
+                    status = status & (~STATUS_RUNNING_MASK);
+                    LOGW("Exited the maze")
                 });
             }
-        }
-
-        if (!(status & STATUS_ARRIVED_MASK)) {
-            /// 当前系统有下一个点的目标，但是仍然没有到达下一个点
-            moveToTarget();
-            auto pid_result =  pid.update(yaw);
-            speedLeft = auto_speed + pid_result;
-            speedRight = auto_speed - pid_result;
-        }
-        if ((status & STATUS_AUTO_FIND_TARGET_MASK) && !(status & STATUS_FIND_TREASURE_MASK)) {
-            /// 自动寻找目标启用且系统仍未找到目标
-            findTargetWithMap(); //类似于selectTarget函数
-            return;
-        } else if (status & STATUS_FIND_TREASURE_MASK) {
-            /// 系统已找到目标,且地图已经建立
-            moveToExit(); //一种新的selectTarget函数，有着指定的位置
-            return;
-        } else if (status & STATUS_ARRIVED_EXIT_MASK) {
-            /// 系统已到达出口
-            stop();
-            status = status & (~STATUS_RUNNING_MASK);// 系统停止运行
-            return;
-        } else {
-            LOGE("status error, status can't be recognized。Current at map build finished")
-            return;
+            if (!(status & STATUS_ARRIVED_MASK)) {
+                /// 当前系统有下一个点的目标，但是仍然没有到达下一个点
+                moveToTarget();
+                return;
+            }
+            if ((status & STATUS_AUTO_FIND_TARGET_MASK) && !(status & STATUS_FIND_TREASURE_MASK)) {
+                /// 自动寻找目标启用且系统仍未找到目标
+                findTargetWithMap(); //类似于selectTarget函数
+                return;
+            } else if (status & STATUS_FIND_TREASURE_MASK) {
+                /// 系统已找到目标,且地图已经建立
+                moveToExit(); //一种新的selectTarget函数，有着指定的位置
+                return;
+            } else if (status & STATUS_ARRIVED_EXIT_MASK) {
+                /// 系统已到达出口
+                stop();
+                status = status & (~STATUS_RUNNING_MASK);// 系统停止运行
+                LOGW("Exited the maze,system stopped")
+                return;
+            } else {
+                LOGE("status error, status can't be recognized。Current at map build finished")
+                return;
+            }
         }
     }
     /// 剩下的情况应该是地图未建立
-
     if (status & STATUS_ARRIVED_MASK) {
         /// 系统到达了上次行动要求的目标点
         if (!(status & STATUS_SCAN_MASK)) {
             scan_result = getNearbyInfo();
-            //TODO: 当前坐标判断
+            LOGI("Scan result:"+String(scan_result[0])+","+String(scan_result[1])+","+String(scan_result[2]))
             status = status | STATUS_SCAN_MASK;//标志系统扫描完成
             status = status & (~STATUS_TARGET_SELECTED_MASK);
             LOGI("Current position scan finished")
@@ -212,13 +191,16 @@ void Control::update() {
             /// 检查当前位置是否检测到目标数字
             if (checkIfHasTreasure()) {
                 //TODO: 当前处于目标数字处，接收信号左右移动以保证视觉系统能够识别到数字
+                LOGI("Treasure found")
                 delay(100);
             }
-            LOGI("FIND ok")
+            LOGI("Current position check finished")
         }
         /// 系统目标需要更多步才能完成
         if (status&STATUS_MULTI_STEP_MASK)
-        {   try {
+        {
+            LOGI("Multi step!")
+            try {
                 processMultiStep(false);
             }
             catch (std::exception & all) //防止数组越界等异常发生造成系统复位
@@ -235,22 +217,15 @@ void Control::update() {
             LOGI("Next target selected")
             status = status | STATUS_TARGET_SELECTED_MASK;
             status = status & (~STATUS_ARRIVED_MASK) & (~STATUS_SCAN_MASK) & (~STATUS_FIND_TREASURE_MASK);
+            return;
         }
     } //系统到达目标点
-    else if (!((status) & STATUS_ARRIVED_MASK)) {
+    else  {
         /// 系统尚未未到达上次行动要求的目标点
         LOGI("Moving to target")
         moveToTarget();
-        auto pidResult = pid.update(yaw);
-        speedLeft = auto_speed + pidResult;
-        speedRight = auto_speed - pidResult;
         return;
     }
-    else {
-        LOGE("status error, status can't be recognized。Current at map build finished")
-        return;
-    }
-
 
 }
 
@@ -533,11 +508,17 @@ void Control::moveToTarget() {
         LOGD("arrive target point")
         status &= ~STATUS_DIRECTION_MASK; //清除目标点
         status |= STATUS_ARRIVED_MASK;
+        auto pidResult = pid.update(yaw);
+        speedLeft = 0 + pidResult;
+        speedRight = 0 - pidResult;
+        return;
+    } else
+    {
+        auto pidResult = pid.update(yaw);
+        speedLeft = auto_speed + pidResult;
+        speedRight = auto_speed - pidResult;
         return;
     }
-    // 未到达目标点
-    //TODO: 处理这种情况
-
 }
 
 void Control::enterTheMaze() {
@@ -577,9 +558,6 @@ void Control::ManualGo(uint8_t direction) {
             LOGE("direction error")
             break;
     }
-    last_distance_front = 0;
-    last_distance_left = 0;
-    last_distance_right = 0;
 
 }
 
@@ -603,11 +581,23 @@ void Control::setKD(float kd) {
 }
 
 int Control::getCurrentPosition() {
-    return mapInfo[static_cast<int>(x_offset + 10) / 40][static_cast<int>(y_offset + 10) / 40];
+    auto x_offset = encoder.getX_offset();
+    auto y_offset = encoder.getY_offset();
+    if (y_offset>200)
+    {
+        y_offset = 200;
+        LOGE("y_offset overflow")
+    }
+    if (x_offset>200)
+    {
+        x_offset = 200;
+        LOGE("x_offset overflow")
+    }
+    return mapInfo[(static_cast<int>(x_offset + 20) / 40)][(static_cast<int>(y_offset + 20) / 40)];
 }
 
 void Control::updateMap(int start, int end, bool isReachable) {
-    mapInfo[start][end] = isReachable;
+    map[start][end] = isReachable;
 }
 
 std::vector<std::vector<int>> Control::getMap() {
@@ -628,30 +618,6 @@ bool Control::notEsxited(int i) {
     catch (const std::out_of_range &oor) {
         return true;
     }
-}
-
-void Control::updateX_Y() {
-    if (status & STATUS_TURNING_MASK) {
-        return;
-    }
-
-    //TODO: 参考系统当前倾角作适当校准
-    if ((status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET)==0) {
-        x_offset += last_distance_front - current_distance_front;
-    }else if ((status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET)==1) {
-        LOGI("Currenrt direction:" + String((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET))
-        y_offset += last_distance_front - current_distance_front;
-    }
-
-      else if ((status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET)==2) {
-        x_offset -= last_distance_front - current_distance_front;
-      } else {
-        LOGI("Currenrt direction:" + String((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET))
-        y_offset -= last_distance_front - current_distance_front;
-    }
-    last_distance_front = current_distance_front;
-    last_distance_left = current_distance_left;
-    last_distance_right = current_distance_right;
 }
 
 using namespace std;
@@ -692,11 +658,15 @@ void Control::dijkstra(int start, int end, int n, vector<int> &targetPath) {
         targetPath.push_back(v);
     }
 }
-
+/**
+ * @brief 处理多步到达目标点的情况
+ * @param inlineCall 是否在规划路径时调用
+ * @attention 该函数会涉及到数组越界的问题，因此需要在调用时进行异常处理
+ */
 void Control::processMultiStep(bool inlineCall) {
     auto currentPos = getCurrentPosition();
-    if (inlineCall) {
-        auto targetPos = ((status & STATUS_TARGET_MASK) >> STATUS_TARGET_OFFSET); //从内联调用时，检查是否能单步完成
+    if (inlineCall) { //从内联调用时，检查是否能单步完成
+        auto targetPos = ((status & STATUS_TARGET_MASK) >> STATUS_TARGET_OFFSET);
         switch ((status & STATUS_DIRECTION_MASK) >> STATUS_DIRECTION_OFFSET) {
             case 0: //当前朝向为下方
             {
@@ -804,7 +774,7 @@ void Control::processMultiStep(bool inlineCall) {
             status &= STATUS_SCAN_MASK;
         }
     }
-    else {
+    else { //从外部调用时，检查是否已经到达目标点
         if (status & STATUS_TURN_FIRST_MASK) {
             //转弯后的第一步
             goStraight();
@@ -834,8 +804,23 @@ std::vector<int> Control::getDistance() {
 }
 
 std::vector<float> Control::getX_Y() {
-    vector<float> result = {x_offset, y_offset};
+    vector<float> result = {static_cast<float>(encoder.getX_offset()), static_cast<float>(encoder.getY_offset())};
     return result;
+}
+
+int Control::getAngleOffset() {
+    switch (status & STATUS_DIRECTION_MASK >> STATUS_DIRECTION_OFFSET) {
+        case 0:
+            return 0;
+        case 1:
+            return 90;
+        case 2:
+            return 180;
+        case 3:
+            return 270;
+        default:
+            return -1;
+    }
 }
 
 
