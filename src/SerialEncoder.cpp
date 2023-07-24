@@ -7,14 +7,15 @@
 #include "Status.h"
 #include "logger.h"
 #include "AsyncTCP.h"
+extern float yaw;
 extern AsyncClient tcp;
 SerialEncoder::SerialEncoder() {
 }
 
 void SerialEncoder::setup() {
 
-    serial->setPins(35, 13);
-    serial->setRxTimeout(10);
+    serial->setPins(14, 13);
+    serial->setRxTimeout(5);
     serial->onReceive([this]() {
         IQRHandler();
     });

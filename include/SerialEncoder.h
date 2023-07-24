@@ -10,7 +10,6 @@ private:
     HardwareSerial * serial = nullptr;
     double offset_x{};
     double offset_y =0 ;
-    float yaw{};
 public:
     explicit SerialEncoder();
     void setup();

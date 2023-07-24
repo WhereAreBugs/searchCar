@@ -39,6 +39,7 @@ Control::Control(PIDConfig config) {
             map[i][j] = 0;
         }
     }
+
     pid.setConfig(config);
 }
 
@@ -59,9 +60,10 @@ void Control::update() {
     /**
      * @brief 由于VL53L0X传感器测距不准，因此舍弃掉mm级别的精度，只保留cm级别的精度。
      */
-    current_distance_left = allDistance.getLeftDistance()/10; // NOLINT(bugprone-integer-division)
-    current_distance_right = allDistance.getRightDistance()/10; // NOLINT(bugprone-integer-division)
-    current_distance_front = allDistance.getFrontDistance()/10; // NOLINT(bugprone-integer-division)
+    current_distance_left = allDistance.getLeftDistance(); // NOLINT(bugprone-integer-division)
+    current_distance_right = allDistance.getRightDistance(); // NOLINT(bugprone-integer-division)
+    current_distance_front = allDistance.getFrontDistance(); // NOLINT(bugprone-integer-division)
+
     if (!(status & STATUS_RUNNING_MASK)) {
         // 系统等待启动
         speedLeft = 0, speedRight = 0;

@@ -188,7 +188,7 @@ void I2C2_start(void *pVoid){
 
 }
 
-
+void StartMainTask(void * nPtr);
 void setup() {
     ///板载资源初始化
     Serial.begin(115200);
@@ -199,9 +199,9 @@ void setup() {
 #endif
 
 #ifndef DISABLE_I2C
-    Wire.begin(21, 22); //MPU9250连接的I2C总线
+    Wire.begin(19, 23); //MPU9250连接的I2C总线
     delay(2000);///保证I2C初始化
-    Wire1.begin(23, 19); //4个激光测距模块连接的I2C总线
+    Wire1.begin(21, 22); //4个激光测距模块连接的I2C总线
 #endif
     ///WIFI初始化
 #ifdef USE_ROUTER_WIFI
@@ -237,9 +237,9 @@ void setup() {
     delay(500);//保证TCP初始化
     ///配置MPU9250
 #ifndef DISABLE_I2C
-    xTaskCreate(I2C1_start, "I2C1_start", 4096, nullptr, 1, nullptr);
+//    xTaskCreate(I2C1_start, "I2C1_start", 4096, nullptr, 2, nullptr);
     ///配置激光测距模块
-    xTaskCreate(I2C2_start, "I2C2_start", 4096, nullptr, 1, nullptr);
+//    xTaskCreate(I2C2_start, "I2C2_start", 4096, nullptr, 1, nullptr);
 #endif
 #ifndef DUSE_OTA
     /// OTA初始化
@@ -313,18 +313,53 @@ void setup() {
         globalOpenMVCallback(data);
     });
     /// 配置串口编码器
+    Serial1.setRxBufferSize(1024);
     Serial1.begin(115200);
     encoder.attchSerial(&Serial1);
     encoder.setup();
     Serial.println("Encoder setup complete");
+//    xTaskCreate(StartMainTask, "StartMainTask", 4096, nullptr, 1, nullptr);
+}
+void StartMainTask(void * nPtr){
+    globalMotor.setSpeed(0, 140);
+    globalMotor.setSpeed(1, 100);
+    vTaskDelay(4500);
+    globalMotor.setSpeed(0, -110);
+    globalMotor.setSpeed(1, 120);
+    vTaskDelay(20);
+    globalMotor.setSpeed(0, 100);
+    globalMotor.setSpeed(1, 100);
+    vTaskDelay(800);
+    globalMotor.setSpeed(0, -100);
+    globalMotor.setSpeed(1, 100);
+    vTaskDelay(10);
+    globalMotor.setSpeed(0, 100);
+    globalMotor.setSpeed(1, 100);
+    vTaskDelay(800);
+    globalMotor.setSpeed(0, 100);
+    globalMotor.setSpeed(1, -100);
+    vTaskDelay(10);
+    globalMotor.setSpeed(0, 100);
+    globalMotor.setSpeed(1, 100);
+    vTaskDelay(20);
+    globalMotor.setSpeed(0, -100);
+    globalMotor.setSpeed(1, 100);
+    vTaskDelay(10);
+    globalMotor.setSpeed(0, 100);
+    globalMotor.setSpeed(1, 100);
+    vTaskDelay(1000);
+    globalMotor.setSpeed(0, 0);
+    globalMotor.setSpeed(1, 0);
+    vTaskDelete(nullptr);
 }
 
 
 void loop() {
-   globalControl.update();
-    /// 同步速度到电机
-    globalMotor.setSpeed(0, globalControl.getSpeedLeft());
-    globalMotor.setSpeed(1, globalControl.getSpeedRight());
+//   globalControl.update();
+//    /// 同步速度到电机
+//    globalMotor.setSpeed(0, globalControl.getSpeedLeft());
+//    globalMotor.setSpeed(1, globalControl.getSpeedRight());
+
 #ifndef DUSE_OTA
     ArduinoOTA.handle();
 #endif

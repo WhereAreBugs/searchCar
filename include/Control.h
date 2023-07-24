@@ -220,6 +220,10 @@ private:
     std::vector<int> mapExitPath;
 
     int getAngleOffset();
+
+    float last_distance_left;
+    float last_distance_right;
+    float last_distance_front;
 };
 
 
